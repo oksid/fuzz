@@ -1,0 +1,267 @@
+var pnwidget = {
+	path: (window.location.host == 'localhost:8002' ||
+		   window.location.host == 'localhost:9010' ||
+		   window.location.host == 'localhost:5050') ? 'http://localhost:8002/app/v2.0/' : (
+		   window.location.host.indexOf('poligon.cultserv') >= 0 ? '//poligon.cultserv.ru:8002/app/v2.0/' : '//w.cultserv.ru/v2.0/'
+	),
+	scriptsReady: false,
+	containerReady: false,
+	stylesReady: false,
+	initParams: false,
+	loadScripts: function(scripts, callback){
+		if ( scripts.length > 0 ) {
+			var el = scripts.shift(),
+				load = function(){
+					var s = document.createElement('script');
+						s.src = (!el.cond ? '' : pnwidget.path) + el.path;
+						s.type = 'text/javascript';
+						s.charset = 'UTF-8';
+						s.onload = function(){ pnwidget.loadScripts(scripts, callback); };
+						s.onerror = function(){ pnwidget.loadScripts(scripts, callback); };
+
+					document.head.appendChild(s);					
+				};
+
+			if ( !el.checkModule ) {
+				load();
+			} else {
+				try {
+					var module = angular.module(el.checkModule);
+					pnwidget.loadScripts(scripts, callback);
+				} catch (err) {
+					load();
+				}
+			}
+		} else {
+			if ( typeof callback == 'function' )
+				callback();
+		}
+	}, loadStyles: function(st, callback) {
+		if ( st.length > 0 ) {
+			var el = st.shift(),
+				s = document.createElement('link');
+				s.href = (!el.cond ? '' : pnwidget.path) + el.path;
+				s.type = 'text/css';
+				s.charset = 'UTF-8';
+				s.rel = 'stylesheet';
+				s.onload = function(){
+					pnwidget.loadStyles(st, callback);
+				};
+				s.onerror = function(){};
+
+			document.head.appendChild(s);
+		} else {
+			if ( typeof callback == 'function' )
+				callback();
+		}
+	}, windowOnload: function(f){
+           var root = window.addEventListener || window.attachEvent ? window : document.addEventListener ? document : null
+           if (root){
+              if(root.addEventListener) root.addEventListener("load", f, false)
+              else if(root.attachEvent) root.attachEvent("onload", f)
+           } else {
+              if(typeof window.onload == 'function') {
+                 var existing = window.onload
+                 window.onload = function() {
+                    existing()
+                    f()
+                 }
+              } else {
+                 window.onload = f
+              }
+           }
+    }, init: function(options) {
+    	var o = options || {};
+    	if ( typeof options.hideHeader == 'undefined' )
+    		o.hideHeader = false;
+
+    	var _init = function(){
+	    	if ( typeof angular == 'undefined' || !pnwidget.scriptsReady || !pnwidget.stylesReady ) {
+	    		var tmt;
+	    		clearTimeout(tmt);
+	    		tmt = setTimeout(function(){
+	    			pnwidget.init(o);
+	    		}, 100);
+	    		return;
+	    	}
+
+	    	var continueInit = function(){
+			   	if ( o && (o.session || o.referral_auth) )
+			    		pnwidget.initParams = true;
+
+				    	var interval,
+				    		w = document.createElement('div'),
+				            s = '<div ng-switch on="ready" class="pnWidgetContainer_child">' +
+									'<div class="dpWidgetContainer_child" ng-switch-when="true">' +
+										'<div ng-include="\'widget\'"></div>' +
+									'</div>' +
+								'</div>' +
+								'<div class="pnWidgetContainerUnderLayer"></div>';
+				        	w.id = 'pnWidgetContainer';
+				        	w.setAttribute('ng-controller','PonominaluWidgetCtrl');
+				        	w.setAttribute('style', 'display:none;');
+				        	w.innerHTML = s;
+
+				        var initWidget = function(cond){
+				        	if ( !cond ) {
+					        	w.setAttribute('class', 'pnw_popupWidget')
+					        	w.innerHTML = s;
+					        	document.body.appendChild(w);
+				        	} else {
+				        		w.setAttribute('class', 'pnw_embeddedWidget');
+				        		w.innerHTML = s;
+				        		document.getElementById(o.containerId).appendChild(w);
+				        	}
+
+					        var boot = angular.bootstrap(document.getElementById('pnWidgetContainer'), ['PonominaluWidgetApp','ngCookies','ngSanitize','ngAnimate','tmh.dynamicLocale','ng-slide-down','angularValidator', 'datePicker', 'ui.bootstrap']),
+					        	scope = angular.element(document.getElementById('pnWidgetContainer')).scope();
+				            
+				            if ( o && o.callback && typeof o.callback == 'function' )
+				                o.callback();
+					        
+					        scope.$apply(function() {
+					            scope.init(o);
+					            pnwidget.containerReady = true;
+					        });
+				        };
+
+				        if ( o.containerId ) {
+				        	clearInterval(interval);
+				        	interval = setInterval(function(){
+				        		if ( typeof document.getElementById(o.containerId) != 'undefined' ) {
+				        			document.getElementById(o.containerId).innerHTML = '';
+				        			clearInterval(interval);
+				        			initWidget(true);
+				        		}
+				        	}, 100);
+				        } else {
+							initWidget(false);
+				        }
+	    	};
+
+	    	if ( o.moreScripts ) {
+	    		var scripts = [];
+
+	    		for ( var i = 0; i < o.moreScripts.length; i++ ) {
+	    			scripts.push({
+	    				path: o.moreScripts[i],
+	    				cond: false
+	    			});
+	    		}
+
+	    		pnwidget.loadScripts(scripts, continueInit);
+	    	} else
+	    		continueInit();
+    	};
+
+    	if ( typeof o.styles != 'undefined' ) {
+			pnScriptsLoader(o.styles, function(){
+				_init();
+			});
+    	} else {
+    		pnScriptsLoader([], _init);
+    	}    	
+	}, show: function(options){
+		var showWidget = function(){
+			var scope = angular.element(document.getElementById('pnWidgetContainer')).scope();
+
+	        scope.$apply(function() {
+	        	if ( scope.current && scope.current.subevent ) {
+	        		scope.close(function(){
+	        			scope.showMe(options);
+	        		});
+	        	} else
+	        		scope.showMe(options);
+	        });
+		};
+
+		var interval;
+		clearInterval(interval);
+		interval = setInterval(function(){
+			if ( pnwidget.containerReady ) {
+				clearInterval(interval);
+				showWidget();
+			}
+		}, 100);
+	}
+};
+
+/*Google tag manager dataLayer*/
+if ( typeof dataLayer == 'undefined' )
+	var dataLayer = [];
+
+/*Loading files*/
+function pnScriptsLoader(newStyles, gCallback){
+	//To-Do. аЃбаЕббб, ббаО аЗаАаГббаЖаАбббб аБбаДаЕб аНаА аДббаГаОаМ баАаЙбаЕ, б w.cultserv.ru
+	var styles = [
+		{ path: '//fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800|Open+Sans+Condensed:300,300italic,700&asubset=cyrillic-ext,latin-ext', cond: false },
+		{ path: 'css/common.css', cond: true }
+	],
+	scripts = [
+		{ path: '//static.criteo.net/js/ld/ld.js', cond: false },
+		{ path: 'lib/angular/tmhDynamicLocale.js', cond: true, checkModule: 'tmh.dynamicLocale' },
+		{ path: 'https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.3.15/angular-cookies.min.js', cond: false, checkModule: 'ngCookies' },
+		{ path: 'https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.3.15/angular-sanitize.min.js', cond: false, checkModule: 'ngSanitize' },
+		{ path: 'https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.3.15/angular-animate.min.js', cond: false, checkModule: 'ngAnimate' },
+		{ path: 'lib/moment.min.js', cond: true },
+		{ path: 'lib/moment-timezone-with-data.js', cond: true },
+		{ path: 'lib/ui-bootstrap-tpls.min.js', cond: true },
+		{ path: 'js/datePicker.js', cond: true },
+		{ path: 'js/datePickerUtils.js', cond: true },
+		{ path: 'js/dateRange.js', cond: true },
+		{ path: 'js/input.js', cond: true },
+		{ path: 'js/postmessage.js', cond: true },
+		{ path: 'js/angular-validator.min.js', cond: true },
+		{ path: 'js/base64.js', cond: true }, 
+		{ path: 'js/pnwidget.js', cond: true}
+	];
+
+	if ( newStyles && newStyles.length ) {
+		styles = [];
+
+		for ( var i = 0; i < newStyles.length; i++ ) {
+			styles.push({
+				path: newStyles[i],
+				cond: false
+			});
+		}
+	}
+
+	var _loading = function(){
+		pnwidget.loadScripts(scripts, function(){
+			pnwidget.scriptsReady = true;
+
+			pnwidget.loadStyles(styles, function(){
+				pnwidget.stylesReady = true;
+
+				if ( typeof gCallback == 'function' )
+					gCallback();
+			});
+		});
+	};
+
+	if ( typeof angular == 'undefined' ) {
+		var s = document.createElement('script');
+			s.src = pnwidget.path + 'lib/angular/angular.min.js';
+			s.type = 'text/javascript';
+			s.charset = 'UTF-8';
+			s.onload = function(){
+				_loading();
+			};
+			s.onerror = function(){
+				//
+			};
+
+		document.head.appendChild(s);
+	} else {
+		_loading();
+	}
+};
+
+
+/*Google tag manager*/
+(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'//www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-WL8GWJ');
